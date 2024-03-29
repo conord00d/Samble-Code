@@ -17,7 +17,7 @@ WITH DemoDate AS
 		,AcculynxLocation
 		,MAX([date]) AS DemoDate
 		--,[action]
-	FROM [psa].[Acculynx_JobHistory]
+	FROM [psa].[Acculynx_JobHistory] 
 	WHERE [action] LIKE '%3+ Month Out%' OR [action] LIKE '%Status -%' OR [action] LIKE '%estimated cost was too high%'
 	GROUP BY job_id, AcculynxLocation
 )
@@ -29,7 +29,7 @@ WITH DemoDate AS
 		,AcculynxLocation
 		,[name] AS MilestoneName
 		,MAX([date]) AS MilestoneDate
-	FROM [psa].[Acculynx_JobMilestoneHistory]
+	FROM [psa].[Acculynx_JobMilestoneHistory] 
 	WHERE [name] IN ('Prospect', 'Cancelled')
 	GROUP BY job_id, AcculynxLocation, [name]
 )
@@ -62,14 +62,14 @@ SELECT
 	,CAST(ISNULL(dd.DemoDate, sd.MilestoneDate) as date) AS DemoDate
 	,CAST(sd.MilestoneDate as date) AS SoldDate
 	,CAST( jbs.MilestoneDate as date) AS LastActivityDate
-FROM [psa].[Acculynx_Jobs] jbs --106330
-LEFT JOIN [psa].[Acculynx_JobPayments] pay
+FROM [psa].[Acculynx_Jobs] AS jbs WITH(NOLOCK) --106330
+LEFT JOIN [psa].[Acculynx_JobPayments] AS pay
 	ON jbs.id = pay.job_id
 	AND jbs.AcculynxLocation = pay.AcculynxLocation
-LEFT JOIN [psa].[Acculynx_JobInitialAppointments] jia
+LEFT JOIN [psa].[Acculynx_JobInitialAppointments] jia 
 	ON jbs.id = jia.job_id
 	AND jbs.AcculynxLocation = jia.AcculynxLocation
-LEFT JOIN [psa].[Acculynx_Jobs_Contacts] jct
+LEFT JOIN [psa].[Acculynx_Jobs_Contacts] jct 
 	ON jct.job_id = jbs.id
 	AND jct.AcculynxLocation = jbs.AcculynxLocation
 	AND jct.isPrimary = 'true'
