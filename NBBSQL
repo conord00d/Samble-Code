@@ -1,0 +1,91 @@
+I've removed a few CTEs, columns and joins from this view statement to clean it up and share some key things I've done in SQL. 
+
+---------------------------------------------------------------------------------------------------------------------
+
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE VIEW [etl].[v_f_Leads_Acculynx] AS
+
+WITH DemoDate AS
+(
+	SELECT
+		job_id
+		,AcculynxLocation
+		,MAX([date]) AS DemoDate
+		--,[action]
+	FROM [psa].[Acculynx_JobHistory]
+	WHERE [action] LIKE '%3+ Month Out%' OR [action] LIKE '%Status -%' OR [action] LIKE '%estimated cost was too high%'
+	GROUP BY job_id, AcculynxLocation
+)
+
+,MilestoneDates AS
+(
+	SELECT
+		job_id
+		,AcculynxLocation
+		,[name] AS MilestoneName
+		,MAX([date]) AS MilestoneDate
+	FROM [psa].[Acculynx_JobMilestoneHistory]
+	WHERE [name] IN ('Prospect', 'Cancelled')
+	GROUP BY job_id, AcculynxLocation, [name]
+)
+
+SELECT 
+	CONCAT(jbs.id, jbs.AcculynxLocation, '|1') AS LeadId
+	,CONCAT(cnt.firstName, ' ', cnt.lastName) AS LeadContactName
+	,jbs.locationAddress_street1 AS LeadAddress
+	,jbs.locationAddress_city AS LeadCity
+	,jbs.locationAddress_state_abbreviation AS LeadState
+	,jbs.locationAddress_zipCode AS LeadZipCode
+	,CAST(jbs.createdDate as date) AS CreatedDate
+	,CASE
+		WHEN jia.startDate IS NOT NULL OR sd.MilestoneDate IS NOT NULL
+			THEN CAST(1 as bit)
+		ELSE CAST(0 as bit)
+	END AS AppointmentSet
+	,CASE
+		WHEN dd.DemoDate IS NOT NULL OR sd.MilestoneDate IS NOT NULL
+			THEN CAST(1 as bit)
+		ELSE CAST(0 as bit)
+	END AS HadDemo
+	,CASE
+		WHEN sd.MilestoneDate IS NOT NULL
+			THEN CAST(1 as bit)
+		ELSE CAST(0 as bit)
+	END AS IsSold
+	,CONVERT (MONEY, pay.salesAmount) AS SaleAmount
+	,CAST(ISNULL(jia.startDate, sd.MilestoneDate) as date) AS AppointmentDate
+	,CAST(ISNULL(dd.DemoDate, sd.MilestoneDate) as date) AS DemoDate
+	,CAST(sd.MilestoneDate as date) AS SoldDate
+	,CAST( jbs.MilestoneDate as date) AS LastActivityDate
+FROM [psa].[Acculynx_Jobs] jbs --106330
+LEFT JOIN [psa].[Acculynx_JobPayments] pay
+	ON jbs.id = pay.job_id
+	AND jbs.AcculynxLocation = pay.AcculynxLocation
+LEFT JOIN [psa].[Acculynx_JobInitialAppointments] jia
+	ON jbs.id = jia.job_id
+	AND jbs.AcculynxLocation = jia.AcculynxLocation
+LEFT JOIN [psa].[Acculynx_Jobs_Contacts] jct
+	ON jct.job_id = jbs.id
+	AND jct.AcculynxLocation = jbs.AcculynxLocation
+	AND jct.isPrimary = 'true'
+LEFT JOIN [psa].[Acculynx_Contacts] cnt
+	ON cnt.id = jct.contact_id
+	AND cnt.AcculynxLocation = jbs.AcculynxLocation
+LEFT JOIN DemoDate dd
+	ON jbs.id = dd.job_id
+	AND jbs.AcculynxLocation = dd.AcculynxLocation
+LEFT JOIN MilestoneDates sd
+	ON jbs.id = sd.job_id
+	AND jbs.AcculynxLocation = sd.AcculynxLocation
+	AND sd.MilestoneName = 'Prospect'
+LEFT JOIN MilestoneDates cd
+	ON jbs.id = cd.job_id
+	AND jbs.AcculynxLocation = cd.AcculynxLocation
+	AND cd.MilestoneName = 'Cancelled'
+
+GO
