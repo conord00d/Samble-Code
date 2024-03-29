@@ -1,14 +1,18 @@
-144oz EQ Inventory = 
+I've left out quite a few measures that are involved to achieve the final measure of "Days On Hand Projection Switch" and attempted to keep this code focused on sharing various functions I've utilized.
+
+----------------------------------------------------------------------------------------
+
+144oz EQ Inventory =
 CALCULATE( 
     SUMX( 
         f_Inventory, 
         [Quantity] * 
         RELATED( 'd_Item'[Ounces] )
     ),
-    f_Inventory[UnitOfMeasure] = "C",
-    f_Inventory[TransCode] = 10,
+    f_Inventory[UnitOfMeasure] = "C",         -- Distributors either report in bottles "B" or cases "C"
+    f_Inventory[TransCode] = 10,              -- Code for current inventory qty
     d_Date[Dateid] = MAX( f_Inventory[PostingDate] )
-) * (1/144)
+) * (1/144)                                   -- Calculates the equivalent to a 144oz case
 +
 CALCULATE( 
     SUMX( 
@@ -16,157 +20,37 @@ CALCULATE(
         [Quantity] * 
         RELATED( 'd_Item'[Ounces] )
     ),
-    f_Inventory[UnitOfMeasure] = "B",
-    f_Inventory[TransCode] = 10,
+    f_Inventory[UnitOfMeasure] = "B",          -- Distributors either report in bottles "B" or cases "C"
+    f_Inventory[TransCode] = 10,               -- Code for current inventory qty
     d_Date[DateId] = MAX( f_Inventory[PostingDate] )
 ) * (1/144) * (1/12) 
-
------------------------------------------------------------------------------------
-
-144oz EQ Inventory Latest = 
-VAR vMaxDate =
-CALCULATE(
-    MAX( f_Inventory[PostingDate] ),
-    ALL( d_Date),
-    d_Date[IsPast] = 1
-)
-RETURN
-CALCULATE(
-    [144oz EQ Inventory],
-    ALL( d_Date ),
-    d_Date[DateId] = vMaxDate
-)
-
-------------------------------------------------------------------------------------
-
-Open Qty Upcoming = 
-VAR vMaxDate =
-CALCULATE(
-    MAX( d_Date[Date] ),
-    d_Date[IsPast] = 0
-)
-VAR vMinDate =
-CALCULATE(
-    MAX( d_Date[Date] ),
-    ALL( d_Date ),
-    d_Date[IsPast] = 1
-)
-RETURN
-CALCULATE(
-    [Open Orders] * AVERAGE( d_Item[144oz EQ Per Ship Qty] ),
-    d_Date[Date] <= vMaxDate,
-    d_Date[Date] > vMinDate
-)
-
-------------------------------------------------------------------------------------
-
-Invoiced Qty Last 2 Weeks = 
-VAR vMaxDate =
-CALCULATE(
-    MAX( d_Date[Date] ),
-    ALL( d_Date ),
-    d_Date[IsPast] = 1
-)
-VAR vMinDate =
-CALCULATE(
-    MAX( d_Date[Date] ) - 13,
-    ALL( d_Date ),
-    d_Date[IsPast] = 1
-)
-RETURN
-CALCULATE(
-    [Invoiced Qty] * AVERAGE( d_Item[144oz EQ Per Ship Qty] ),
-    d_Date[Date] <= vMaxDate,
-    d_Date[Date] >= vMinDate
-)
-
-------------------------------------------------------------------------------------
-
-Open + Inv Orders Last 2 Weeks + Upcoming = 
-[Invoiced Qty Last 2 Weeks] + [Open Qty Upcoming]
-
-------------------------------------------------------------------------------------
-
-144oz EQ Projected Inventory before Depletions = 
-[144oz EQ Inventory Latest] + [Open + Inv Orders Last 2 Weeks + Upcoming]
 
 ------------------------------------------------------------------------------------
 
 Depletions Last 4 Weeks = 
-VAR vMaxDate =
-CALCULATE(
-    MAX( d_Date[Date] ),
-    ALL( d_Date ),
-    d_Date[IsPast] = 1,
-    d_Date[IsWeekend] = 0,
-    d_Date[IsHoliday] = 0
-)
-VAR vDates =
+VAR vDates =                -- Establish list of dates that meet business day criteria
 FILTER(
     ALL( d_Date ),
     d_Date[IsPast] = 1 &&
     d_Date[IsWeekend] = 0 &&
     d_Date[IsHoliday] = 0
 )
-VAR vFilteredDates =
-TOPN( 20, vDates, [Date] )
+
+VAR vFilteredDates =        -- Filter list to only show last 20 of them (Last 20 business days)
+TOPN( 20, vDates, [Date] )        
+
 RETURN
+
 CALCULATE(
     [Depletions 144oz EQ],
-    vFilteredDates
+    vFilteredDates            -- Calculate depletions (in ounces) for last 20 business days
 )
-
-------------------------------------------------------------------------------------
-
-Weeks Elapsed = 
-VAR vCurrentWeek = 
-CALCULATE(
-    MIN('d_Date'[WeekIndex]),
-    d_Date[IsPast] = 0
-)       // Identify the current week in context
-VAR vWeeksElapsed = 
-        FILTER(
-            ALLSELECTED('d_Date'),
-            d_Date[IsPast] = 0
-            && 'd_Date'[WeekIndex] <= vCurrentWeek
-        )
-VAR vWeeksElapsedCount = 
-    CALCULATE(
-        DISTINCTCOUNT( d_Date[WeekIndex] ),
-        vWeeksElapsed
-    )
-RETURN
-vWeeksElapsedCount
-
-------------------------------------------------------------------------------------
-
-Depletions Weekly Rolling Switch = 
-SWITCH(
-    VALUES( p_DepletionParameter[Order] ),
-    1, [Depletions Weekly Last 4 Weeks] * [Weeks Elapsed],
-    2, [Depletions Weekly Last 4 Weeks +10%] * [Weeks Elapsed],
-    3, [Depletions Weekly Last 4 Weeks +20%] * [Weeks Elapsed],
-    4, [Depletions Weekly Last 4 Weeks +30%] * [Weeks Elapsed],
-    5, [Depletions Weekly Last 6 Weeks] * [Weeks Elapsed],
-    6, [Depletions Weekly Last 6 Weeks +10%] * [Weeks Elapsed],
-    7, [Depletions Weekly Last 6 Weeks +20%] * [Weeks Elapsed],
-    8, [Depletions Weekly Last 6 Weeks +30%] * [Weeks Elapsed],
-    9, [Depletions Weekly Last 8 Weeks] * [Weeks Elapsed],
-    10, [Depletions Weekly Last 8 Weeks +10%] * [Weeks Elapsed],
-    11, [Depletions Weekly Last 8 Weeks +20%] * [Weeks Elapsed],
-    12, [Depletions Weekly Last 8 Weeks +30%] * [Weeks Elapsed]
-)
-
-------------------------------------------------------------------------------------
-
-Projected Inventory Switch = 
-[144oz EQ Projected Inventory before Depletions] - [Depletions Weekly Rolling Switch]
 
 ------------------------------------------------------------------------------------
 
 Depletions Daily Switch = 
 SWITCH(
-    VALUES( p_DepletionParameter[Order] ),
+    VALUES( p_DepletionParameter[Order] ),                -- Refers to a disconnected table whose fields are dropped onto a slicer that users can toggle the output
     1, DIVIDE( [Depletions Last 4 Weeks], 20 ),
     2, DIVIDE( [Depletions Last 4 Weeks +10%], 20 ),
     3, DIVIDE( [Depletions Last 4 Weeks +20%], 20 ),
@@ -185,6 +69,6 @@ SWITCH(
 
 Days On Hand Projection Switch = 
 DIVIDE(
-    [Projected Inventory Switch],
+    [144oz EQ Inventory Latest],
     [Depletions Daily Switch]
 )
